@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /* eslint-disable import/no-unresolved, import/default */
 
 import materialIconsCodepoints from 'raw-loader!material-design-icons/iconfont/codepoints';
@@ -31,7 +30,7 @@ export default angular.module('thingsboard.utils', [thingsboardTypes])
     .factory('utils', Utils)
     .name;
 
-const varsRegex = /\$\{([^\}]*)\}/g;
+const varsRegex = /\$\{([^}]*)\}/g;
 
 /*@ngInject*/
 function Utils($mdColorPalette, $rootScope, $window, $translate, $q, $timeout, types) {
@@ -121,18 +120,8 @@ function Utils($mdColorPalette, $rootScope, $window, $translate, $q, $timeout, t
     ];
 
     var defaultAlarmDataKeys = [];
-    for (var i=0;i<defaultAlarmFields.length;i++) {
-        var name = defaultAlarmFields[i];
-        var dataKey = {
-            name: name,
-            type: types.dataKeyType.alarm,
-            label: $translate.instant(types.alarmFields[name].name)+'',
-            color: getMaterialColor(i),
-            settings: {},
-            _hash: Math.random()
-        };
-        defaultAlarmDataKeys.push(dataKey);
-    }
+
+    var imageAspectMap = {};
 
     var service = {
         getDefaultDatasource: getDefaultDatasource,
@@ -159,7 +148,8 @@ function Utils($mdColorPalette, $rootScope, $window, $translate, $q, $timeout, t
         insertVariable: insertVariable,
         customTranslation: customTranslation,
         objToBase64: objToBase64,
-        base64toObj: base64toObj
+        base64toObj: base64toObj,
+        loadImageAspect: loadImageAspect
     }
 
     return service;
@@ -310,14 +300,32 @@ function Utils($mdColorPalette, $rootScope, $window, $translate, $q, $timeout, t
         return angular.toJson(getDefaultDatasource(dataKeySchema));
     }
 
+    function initDefaultAlarmDataKeys() {
+        for (var i=0;i<defaultAlarmFields.length;i++) {
+            var name = defaultAlarmFields[i];
+            var dataKey = {
+                name: name,
+                type: types.dataKeyType.alarm,
+                label: $translate.instant(types.alarmFields[name].name)+'',
+                color: getMaterialColor(i),
+                settings: {},
+                _hash: Math.random()
+            };
+            defaultAlarmDataKeys.push(dataKey);
+        }
+    }
+
     function getDefaultAlarmDataKeys() {
+        if (!defaultAlarmDataKeys.length) {
+            initDefaultAlarmDataKeys();
+        }
         return angular.copy(defaultAlarmDataKeys);
     }
 
     function isDescriptorSchemaNotEmpty(descriptor) {
         if (descriptor && descriptor.schema && descriptor.schema.properties) {
             for(var prop in descriptor.schema.properties) {
-                if (descriptor.schema.properties.hasOwnProperty(prop)) {
+                if (Object.prototype.hasOwnProperty.call(descriptor.schema.properties, prop)) {
                     return true;
                 }
             }
@@ -495,8 +503,12 @@ function Utils($mdColorPalette, $rootScope, $window, $translate, $q, $timeout, t
                 label = label.split(variable).join(datasource.entityName);
             } else if (variableName === 'deviceName') {
                 label = label.split(variable).join(datasource.entityName);
+            } else if (variableName === 'entityLabel') {
+                label = label.split(variable).join(datasource.entityLabel);
             } else if (variableName === 'aliasName') {
                 label = label.split(variable).join(datasource.aliasName);
+            } else if (variableName === 'entityDescription') {
+                label = label.split(variable).join(datasource.entityDescription);
             }
             match = varsRegex.exec(pattern);
         }
@@ -541,6 +553,38 @@ function Utils($mdColorPalette, $rootScope, $window, $translate, $q, $timeout, t
         var json = utf8Decode(encoded);
         var obj = angular.fromJson(json);
         return obj;
+    }
+
+    function loadImageAspect(imageUrl) {
+        var deferred = $q.defer();
+        if (imageUrl && imageUrl.length) {
+            var urlHashCode = hashCode(imageUrl);
+            var aspect = imageAspectMap[urlHashCode];
+            if (angular.isUndefined(aspect)) {
+                var testImage = document.createElement('img'); // eslint-disable-line
+                testImage.style.position = 'absolute';
+                testImage.style.left = '-99999px';
+                testImage.style.top = '-99999px';
+                testImage.onload = function() {
+                    aspect = testImage.width / testImage.height;
+                    document.body.removeChild(testImage); //eslint-disable-line
+                    imageAspectMap[urlHashCode] = aspect;
+                    deferred.resolve(aspect);
+                };
+                testImage.onerror = function() {
+                    aspect = 0;
+                    imageAspectMap[urlHashCode] = aspect;
+                    deferred.resolve(aspect);
+                };
+                document.body.appendChild(testImage); //eslint-disable-line
+                testImage.src = imageUrl;
+            } else {
+                deferred.resolve(aspect);
+            }
+        } else {
+            deferred.resolve(0);
+        }
+        return deferred.promise;
     }
 
 }

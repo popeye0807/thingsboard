@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import thingsboardTypes from '../../common/types.constant';
 import thingsboardUtils from '../../common/utils.service';
 import thingsboardEntityAliasSelect from '../entity-alias-select.directive';
@@ -23,6 +22,8 @@ import thingsboardLegendConfig from '../legend-config.directive';
 import thingsboardJsonForm from '../json-form.directive';
 import thingsboardManageWidgetActions from './action/manage-widget-actions.directive';
 import 'angular-ui-ace';
+
+import fixAceEditor from './../ace-editor-fix';
 
 import './widget-config.scss';
 
@@ -62,6 +63,8 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
             type: "object",
             properties: {}
         };
+        
+        scope.emptySettingsGroupInfoes=[];
         scope.defaultSettingsForm = [
             '*'
         ];
@@ -73,6 +76,9 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
                 enableSnippets: true,
                 enableBasicAutocompletion: true,
                 enableLiveAutocompletion: true
+            },
+            onLoad: function (_ace) {
+                fixAceEditor(_ace);
             }
         };
 
@@ -86,6 +92,7 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
 
         scope.currentSettingsSchema = {};
         scope.currentSettings = angular.copy(scope.emptySettingsSchema);
+        scope.currentSettingsGroupInfoes = angular.copy(scope.emptySettingsGroupInfoes);
 
         scope.targetDeviceAlias = {
             value: null
@@ -102,6 +109,11 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
                 if (config) {
                     scope.selectedTab = 0;
                     scope.title = config.title;
+                    scope.showTitleIcon = angular.isDefined(config.showTitleIcon) ? config.showTitleIcon : false;
+                    scope.titleIcon = angular.isDefined(config.titleIcon) ? config.titleIcon : '';
+                    scope.iconColor = angular.isDefined(config.iconColor) ? config.iconColor : 'rgba(0, 0, 0, 0.87)';
+                    scope.iconSize = angular.isDefined(config.iconSize) ? config.iconSize : '24px';
+                    scope.titleTooltip = angular.isDefined(config.titleTooltip) ? config.titleTooltip : '';
                     scope.showTitle = config.showTitle;
                     scope.dropShadow = angular.isDefined(config.dropShadow) ? config.dropShadow : true;
                     scope.enableFullscreen = angular.isDefined(config.enableFullscreen) ? config.enableFullscreen : true;
@@ -120,6 +132,8 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
                     scope.decimals = config.decimals;
                     scope.useDashboardTimewindow = angular.isDefined(config.useDashboardTimewindow) ?
                         config.useDashboardTimewindow : true;
+                    scope.displayTimewindow = angular.isDefined(config.displayTimewindow) ?
+                        config.displayTimewindow : true;
                     scope.timewindow = config.timewindow;
                     scope.showLegend = angular.isDefined(config.showLegend) ?
                         config.showLegend : scope.widgetType === types.widgetType.timeseries.value;
@@ -185,10 +199,12 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
             if (scope.widgetSettingsSchema && scope.widgetSettingsSchema.schema) {
                 scope.currentSettingsSchema = scope.widgetSettingsSchema.schema;
                 scope.currentSettingsForm = scope.widgetSettingsSchema.form || angular.copy(scope.defaultSettingsForm);
+                scope.currentSettingsGroupInfoes = scope.widgetSettingsSchema.groupInfoes;
                 scope.currentSettings = scope.settings;
             } else {
                 scope.currentSettingsForm = angular.copy(scope.defaultSettingsForm);
                 scope.currentSettingsSchema = angular.copy(scope.emptySettingsSchema);
+                scope.currentSettingsGroupInfoes = angular.copy(scope.emptySettingsGroupInfoes);
                 scope.currentSettings = {};
             }
         }
@@ -225,14 +241,19 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
             }
         };
 
-        scope.$watch('title + showTitle + dropShadow + enableFullscreen + backgroundColor + color + ' +
-            'padding + margin + widgetStyle + titleStyle + mobileOrder + mobileHeight + units + decimals + useDashboardTimewindow + ' +
-            'alarmSearchStatus + alarmsPollingInterval + showLegend', function () {
+        scope.$watch('title + showTitleIcon + titleIcon + iconColor + iconSize + titleTooltip + showTitle + dropShadow + enableFullscreen + backgroundColor + ' +
+            'color + padding + margin + widgetStyle + titleStyle + mobileOrder + mobileHeight + units + decimals + useDashboardTimewindow + ' +
+            'displayTimewindow + alarmSearchStatus + alarmsPollingInterval + showLegend', function () {
             if (ngModelCtrl.$viewValue) {
                 var value = ngModelCtrl.$viewValue;
                 if (value.config) {
                     var config = value.config;
                     config.title = scope.title;
+                    config.showTitleIcon = scope.showTitleIcon;
+                    config.titleIcon = scope.titleIcon;
+                    config.iconColor = scope.iconColor;
+                    config.iconSize = scope.iconSize;
+                    config.titleTooltip = scope.titleTooltip;
                     config.showTitle = scope.showTitle;
                     config.dropShadow = scope.dropShadow;
                     config.enableFullscreen = scope.enableFullscreen;
@@ -253,6 +274,7 @@ function WidgetConfig($compile, $templateCache, $rootScope, $translate, $timeout
                     config.units = scope.units;
                     config.decimals = scope.decimals;
                     config.useDashboardTimewindow = scope.useDashboardTimewindow;
+                    config.displayTimewindow = scope.displayTimewindow;
                     config.alarmSearchStatus = scope.alarmSearchStatus;
                     config.alarmsPollingInterval = scope.alarmsPollingInterval;
                     config.showLegend = scope.showLegend;

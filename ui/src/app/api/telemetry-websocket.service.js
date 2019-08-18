@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,8 +23,10 @@ export default angular.module('thingsboard.api.telemetryWebsocket', [thingsboard
 const RECONNECT_INTERVAL = 2000;
 const WS_IDLE_TIMEOUT = 90000;
 
+const MAX_PUBLISH_COMMANDS = 10;
+
 /*@ngInject*/
-function TelemetryWebsocketService($rootScope, $websocket, $timeout, $window, types, userService) {
+function TelemetryWebsocketService($rootScope, $websocket, $timeout, $window, $mdUtil, $log, toast, types, userService) {
 
     var isOpening = false,
         isOpened = false,
@@ -75,20 +77,45 @@ function TelemetryWebsocketService($rootScope, $websocket, $timeout, $window, ty
     return service;
 
     function publishCommands () {
-        if (isOpened && (cmdsWrapper.tsSubCmds.length > 0 ||
-            cmdsWrapper.historyCmds.length > 0 ||
-            cmdsWrapper.attrSubCmds.length > 0)) {
-            dataStream.send(angular.copy(cmdsWrapper)).then(function () {
+        while(isOpened && hasCommands()) {
+            dataStream.send(preparePublishCommands()).then(function () {
                 checkToClose();
             });
-            cmdsWrapper.tsSubCmds = [];
-            cmdsWrapper.historyCmds = [];
-            cmdsWrapper.attrSubCmds = [];
         }
         tryOpenSocket();
     }
 
-    function onError (/*message*/) {
+    function hasCommands() {
+        return cmdsWrapper.tsSubCmds.length > 0 ||
+            cmdsWrapper.historyCmds.length > 0 ||
+            cmdsWrapper.attrSubCmds.length > 0;
+    }
+
+    function preparePublishCommands() {
+        var preparedWrapper = {};
+        var leftCount = MAX_PUBLISH_COMMANDS;
+        preparedWrapper.tsSubCmds = popCmds(cmdsWrapper.tsSubCmds, leftCount);
+        leftCount -= preparedWrapper.tsSubCmds.length;
+        preparedWrapper.historyCmds = popCmds(cmdsWrapper.historyCmds, leftCount);
+        leftCount -= preparedWrapper.historyCmds.length;
+        preparedWrapper.attrSubCmds = popCmds(cmdsWrapper.attrSubCmds, leftCount);
+        return preparedWrapper;
+    }
+
+    function popCmds(cmds, leftCount) {
+        var toPublish = Math.min(cmds.length, leftCount);
+        if (toPublish > 0) {
+            return cmds.splice(0, toPublish);
+        } else {
+            return [];
+        }
+    }
+
+    function onError (errorEvent) {
+        if (errorEvent) {
+            //showWsError(0, errorEvent);
+            $log.warn('WebSocket error event', errorEvent);
+        }
         isOpening = false;
     }
 
@@ -114,7 +141,10 @@ function TelemetryWebsocketService($rootScope, $websocket, $timeout, $window, ty
         }
     }
 
-    function onClose () {
+    function onClose (closeEvent) {
+        if (closeEvent && closeEvent.code > 1000 && closeEvent.code !== 1006) {
+            showWsError(closeEvent.code, closeEvent.reason);
+        }
         isOpening = false;
         isOpened = false;
         if (isActive) {
@@ -139,7 +169,9 @@ function TelemetryWebsocketService($rootScope, $websocket, $timeout, $window, ty
     function onMessage (message) {
         if (message.data) {
             var data = angular.fromJson(message.data);
-            if (data.subscriptionId) {
+            if (data.errorCode) {
+                showWsError(data.errorCode, data.errorMsg);
+            } else if (data.subscriptionId) {
                 var subscriber = subscribers[data.subscriptionId];
                 if (subscriber && data) {
                     var keys = fetchKeys(data.subscriptionId);
@@ -157,6 +189,18 @@ function TelemetryWebsocketService($rootScope, $websocket, $timeout, $window, ty
             }
         }
         checkToClose();
+    }
+
+    function showWsError(errorCode, errorMsg) {
+        var message = 'WebSocket Error: ';
+        if (errorMsg) {
+            message += errorMsg;
+        } else {
+            message += "error code - " + errorCode + ".";
+        }
+        $mdUtil.nextTick(function () {
+            toast.showError(message);
+        });
     }
 
     function fetchKeys(subscriptionId) {
@@ -240,6 +284,10 @@ function TelemetryWebsocketService($rootScope, $websocket, $timeout, $window, ty
                         }
                     }
                 }
+            }
+            var index = reconnectSubscribers.indexOf(subscriber);
+            if (index > -1) {
+                reconnectSubscribers.splice(index, 1);
             }
             subscribersCount--;
             publishCommands();

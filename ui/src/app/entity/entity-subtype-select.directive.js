@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import './entity-subtype-select.scss';
 
 /* eslint-disable import/no-unresolved, import/default */
@@ -23,7 +22,7 @@ import entitySubtypeSelectTemplate from './entity-subtype-select.tpl.html';
 /* eslint-enable import/no-unresolved, import/default */
 
 /*@ngInject*/
-export default function EntitySubtypeSelect($compile, $templateCache, $translate, assetService, deviceService, types) {
+export default function EntitySubtypeSelect($compile, $templateCache, $translate, assetService, deviceService, entityViewService, types) {
 
     var linker = function (scope, element, attrs, ngModelCtrl) {
         var template = $templateCache.get(entitySubtypeSelectTemplate);
@@ -73,9 +72,11 @@ export default function EntitySubtypeSelect($compile, $templateCache, $translate
             scope.entitySubtypes = [];
             var entitySubtypesPromise;
             if (scope.entityType == types.entityType.asset) {
-                entitySubtypesPromise = assetService.getAssetTypes();
+                entitySubtypesPromise = assetService.getAssetTypes({ignoreLoading: true});
             } else if (scope.entityType == types.entityType.device) {
-                entitySubtypesPromise = deviceService.getDeviceTypes();
+                entitySubtypesPromise = deviceService.getDeviceTypes({ignoreLoading: true});
+            } else if (scope.entityType == types.entityType.entityView) {
+                entitySubtypesPromise = entityViewService.getEntityViewTypes({ignoreLoading: true});
             }
             if (entitySubtypesPromise) {
                 entitySubtypesPromise.then(
@@ -101,6 +102,9 @@ export default function EntitySubtypeSelect($compile, $templateCache, $translate
             } else if (scope.entityType == types.entityType.device) {
                 scope.entitySubtypeTitle = 'device.device-type';
                 scope.entitySubtypeRequiredText = 'device.device-type-required';
+            } else if (scope.entityType == types.entityType.entityView) {
+                scope.entitySubtypeTitle = 'entity-view.entity-view-type';
+                scope.entitySubtypeRequiredText = 'entity-view.entity-view-type-required';
             }
             scope.entitySubtypes.length = 0;
             if (scope.entitySubtypesList && scope.entitySubtypesList.length) {
@@ -115,6 +119,10 @@ export default function EntitySubtypeSelect($compile, $templateCache, $translate
                     });
                 } else if (scope.entityType == types.entityType.device) {
                     scope.$on('deviceSaved', function() {
+                        loadSubTypes();
+                    });
+                } else if (scope.entityType == types.entityType.entityView) {
+                    scope.$on('entityViewSaved', function() {
                         loadSubTypes();
                     });
                 }

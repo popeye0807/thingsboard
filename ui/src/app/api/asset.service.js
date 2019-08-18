@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -32,7 +32,8 @@ function AssetService($http, $q, customerService, userService) {
         getCustomerAssets: getCustomerAssets,
         findByQuery: findByQuery,
         fetchAssetsByNameFilter: fetchAssetsByNameFilter,
-        getAssetTypes: getAssetTypes
+        getAssetTypes: getAssetTypes,
+        findByName: findByName
     }
 
     return service;
@@ -265,10 +266,22 @@ function AssetService($http, $q, customerService, userService) {
         return deferred.promise;
     }
 
-    function getAssetTypes() {
+    function getAssetTypes(config) {
         var deferred = $q.defer();
         var url = '/api/asset/types';
-        $http.get(url).then(function success(response) {
+        $http.get(url, config).then(function success(response) {
+            deferred.resolve(response.data);
+        }, function fail() {
+            deferred.reject();
+        });
+        return deferred.promise;
+    }
+
+    function findByName(assetName, config) {
+        config = config || {};
+        var deferred = $q.defer();
+        var url = '/api/tenant/assets?assetName=' + assetName;
+        $http.get(url, config).then(function success(response) {
             deferred.resolve(response.data);
         }, function fail() {
             deferred.reject();

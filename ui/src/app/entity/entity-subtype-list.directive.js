@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /* eslint-disable import/no-unresolved, import/default */
 
 import entitySubtypeListTemplate from './entity-subtype-list.tpl.html';
@@ -23,7 +22,7 @@ import entitySubtypeListTemplate from './entity-subtype-list.tpl.html';
 import './entity-subtype-list.scss';
 
 /*@ngInject*/
-export default function EntitySubtypeListDirective($compile, $templateCache, $q, $mdUtil, $translate, $filter, types, assetService, deviceService) {
+export default function EntitySubtypeListDirective($compile, $templateCache, $q, $mdUtil, $translate, $filter, types, assetService, deviceService, entityViewService) {
 
     var linker = function (scope, element, attrs, ngModelCtrl) {
 
@@ -48,6 +47,12 @@ export default function EntitySubtypeListDirective($compile, $templateCache, $q,
             scope.secondaryPlaceholder = '+' + $translate.instant('device.device-type');
             scope.noSubtypesMathingText = 'device.no-device-types-matching';
             scope.subtypeListEmptyText = 'device.device-type-list-empty';
+        } else if (scope.entityType == types.entityType.entityView) {
+            scope.placeholder = scope.tbRequired ? $translate.instant('entity-view.enter-entity-view-type')
+                : $translate.instant('entity-view.any-entity-view');
+            scope.secondaryPlaceholder = '+' + $translate.instant('entity-view.entity-view-type');
+            scope.noSubtypesMathingText = 'entity-view.no-entity-view-types-matching';
+            scope.subtypeListEmptyText = 'entity-view.entity-view-type-list-empty';
         }
 
         scope.$watch('tbRequired', function () {
@@ -95,9 +100,11 @@ export default function EntitySubtypeListDirective($compile, $templateCache, $q,
             if (!scope.entitySubtypes) {
                 var entitySubtypesPromise;
                 if (scope.entityType == types.entityType.asset) {
-                    entitySubtypesPromise = assetService.getAssetTypes();
+                    entitySubtypesPromise = assetService.getAssetTypes({ignoreLoading: true});
                 } else if (scope.entityType == types.entityType.device) {
-                    entitySubtypesPromise = deviceService.getDeviceTypes();
+                    entitySubtypesPromise = deviceService.getDeviceTypes({ignoreLoading: true});
+                } else if (scope.entityType == types.entityType.entityView) {
+                    entitySubtypesPromise = entityViewService.getEntityViewTypes({ignoreLoading: true});
                 }
                 if (entitySubtypesPromise) {
                     entitySubtypesPromise.then(

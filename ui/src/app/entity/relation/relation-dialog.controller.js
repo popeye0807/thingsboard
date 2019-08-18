@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,8 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import 'brace/ext/language_tools';
+import 'brace/ext/searchbox';
 import 'brace/mode/json';
 import 'brace/theme/github';
 import beautify from 'js-beautify';
@@ -79,10 +79,8 @@ export default function RelationDialogController($scope, $mdDialog, types, entit
     });
 
     function updateEditorSize(element) {
-        var newWidth = 600;
         var newHeight = 200;
-        angular.element('#tb-relation-additional-info', element).height(newHeight.toString() + "px")
-            .width(newWidth.toString() + "px");
+        angular.element('#tb-relation-additional-info', element).height(newHeight.toString() + "px");
         vm.editor.resize();
     }
 

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 /* eslint-disable import/no-unresolved, import/default */
 
 import entityFilterTemplate from './entity-filter.tpl.html';
@@ -70,9 +69,14 @@ export default function EntityFilterDirective($compile, $templateCache, $q, $doc
                     filter.deviceType = null;
                     filter.deviceNameFilter = '';
                     break;
+                case types.aliasFilterType.entityViewType.value:
+                    filter.entityViewType = null;
+                    filter.entityViewNameFilter = '';
+                    break;
                 case types.aliasFilterType.relationsQuery.value:
                 case types.aliasFilterType.assetSearchQuery.value:
                 case types.aliasFilterType.deviceSearchQuery.value:
+                case types.aliasFilterType.entityViewSearchQuery.value:
                     filter.rootStateEntity = false;
                     filter.stateEntityParamName = null;
                     filter.defaultStateEntity = null;
@@ -87,6 +91,9 @@ export default function EntityFilterDirective($compile, $templateCache, $q, $doc
                     } else if (filter.type === types.aliasFilterType.deviceSearchQuery.value) {
                         filter.relationType = null;
                         filter.deviceTypes = [];
+                    } else if (filter.type === types.aliasFilterType.entityViewSearchQuery.value) {
+                        filter.relationType = null;
+                        filter.entityViewTypes = [];
                     }
                     break;
             }

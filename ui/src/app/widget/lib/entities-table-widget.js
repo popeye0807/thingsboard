@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,13 +13,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import './entities-table-widget.scss';
+import './display-columns-panel.scss';
 
 /* eslint-disable import/no-unresolved, import/default */
 
 import entitiesTableWidgetTemplate from './entities-table-widget.tpl.html';
 //import entityDetailsDialogTemplate from './entitiy-details-dialog.tpl.html';
+import displayColumnsPanelTemplate from './display-columns-panel.tpl.html';
 
 /* eslint-enable import/no-unresolved, import/default */
 
@@ -46,7 +47,7 @@ function EntitiesTableWidget() {
 }
 
 /*@ngInject*/
-function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $translate, utils, types) {
+function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $mdPanel, $document, $translate, $timeout, utils, types) {
     var vm = this;
 
     vm.stylesInfo = {};
@@ -66,11 +67,13 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
 
     vm.displayEntityName = true;
     vm.entityNameColumnTitle = '';
+    vm.displayEntityLabel = false;
+    vm.entityLabelColumnTitle = '';
     vm.displayEntityType = true;
     vm.actionCellDescriptors = [];
     vm.displayPagination = true;
     vm.defaultPageSize = 10;
-    vm.defaultSortOrder = 'entityName';
+    vm.defaultSortOrder = "'entityName'";
 
     vm.query = {
         order: vm.defaultSortOrder,
@@ -98,6 +101,8 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
 
     vm.cellStyle = cellStyle;
     vm.cellContent = cellContent;
+
+    vm.editColumnsToDisplay = editColumnsToDisplay;
 
     $scope.$watch('vm.ctx', function() {
         if (vm.ctx && vm.ctx.defaultSubscription) {
@@ -156,11 +161,18 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
 
         vm.searchAction.show = angular.isDefined(vm.settings.enableSearch) ? vm.settings.enableSearch : true;
         vm.displayEntityName = angular.isDefined(vm.settings.displayEntityName) ? vm.settings.displayEntityName : true;
+        vm.displayEntityLabel = angular.isDefined(vm.settings.displayEntityLabel) ? vm.settings.displayEntityLabel : false;
 
         if (vm.settings.entityNameColumnTitle && vm.settings.entityNameColumnTitle.length) {
             vm.entityNameColumnTitle = utils.customTranslation(vm.settings.entityNameColumnTitle, vm.settings.entityNameColumnTitle);
         } else {
             vm.entityNameColumnTitle = $translate.instant('entity.entity-name');
+        }
+
+        if (vm.settings.entityLabelColumnTitle && vm.settings.entityLabelColumnTitle.length) {
+            vm.entityLabelColumnTitle = utils.customTranslation(vm.settings.entityLabelColumnTitle, vm.settings.entityLabelColumnTitle);
+        } else {
+            vm.entityLabelColumnTitle = $translate.instant('entity.entity-label');
         }
 
         vm.displayEntityType = angular.isDefined(vm.settings.displayEntityType) ? vm.settings.displayEntityType : true;
@@ -173,6 +185,11 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
 
         if (vm.settings.defaultSortOrder && vm.settings.defaultSortOrder.length) {
             vm.defaultSortOrder = vm.settings.defaultSortOrder;
+            if (vm.settings.defaultSortOrder.charAt(0) === "-") {
+                vm.defaultSortOrder = "-'" + vm.settings.defaultSortOrder.substring(1) + "'";
+            } else {
+                vm.defaultSortOrder = "'" + vm.settings.defaultSortOrder + "'";
+            }
         }
 
         vm.query.order = vm.defaultSortOrder;
@@ -255,6 +272,9 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
     function enterFilterMode () {
         vm.query.search = '';
         vm.ctx.hideTitlePanel = true;
+        $timeout(()=>{
+            angular.element(vm.ctx.$container).find('.searchInput').focus();
+        })
     }
 
     function exitFilterMode () {
@@ -340,7 +360,11 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
         }
         if (!style.width) {
             var columnWidth = vm.columnWidth[key.label];
-            style.width = columnWidth;
+            if(columnWidth !== "0px") {
+                style.width = columnWidth;
+            } else {
+                style.width = "auto";
+            }
         }
         return style;
     }
@@ -361,19 +385,13 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
                     content = strContent;
                 }
             } else {
-                content = defaultContent(key, value);
+                var decimals = (contentInfo.decimals || contentInfo.decimals === 0) ? contentInfo.decimals : vm.widgetConfig.decimals;
+                var units = contentInfo.units || vm.widgetConfig.units;
+                content = vm.ctx.utils.formatValue(value, decimals, units, true);
             }
             return content;
         } else {
             return strContent;
-        }
-    }
-
-    function defaultContent(key, value) {
-        if (angular.isDefined(value)) {
-            return value;
-        } else {
-            return '';
         }
     }
 
@@ -386,7 +404,7 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
     );
 
     function getEntityValue(entity, key) {
-        return getDescendantProp(entity, key.name);
+        return getDescendantProp(entity, key.label);
     }
 
     function updateEntitiesData(data) {
@@ -399,13 +417,37 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
                     var keyData = data[index].data;
                     if (keyData && keyData.length && keyData[0].length > 1) {
                         var value = keyData[0][1];
-                        entity[dataKey.name] = value;
+                        entity[dataKey.label] = value;
                     } else {
-                        entity[dataKey.name] = '';
+                        entity[dataKey.label] = '';
                     }
                 }
             }
         }
+    }
+
+    function editColumnsToDisplay($event) {
+        var element = angular.element($event.target);
+        var position = $mdPanel.newPanelPosition()
+            .relativeTo(element)
+            .addPanelPosition($mdPanel.xPosition.ALIGN_END, $mdPanel.yPosition.BELOW);
+        var config = {
+            attachTo: angular.element($document[0].body),
+            controller: DisplayColumnsPanelController,
+            controllerAs: 'vm',
+            templateUrl: displayColumnsPanelTemplate,
+            panelClass: 'tb-display-columns-panel',
+            position: position,
+            fullscreen: false,
+            locals: {
+                'columns': vm.columns
+            },
+            openFrom: $event,
+            clickOutsideToClose: true,
+            escapeToClose: true,
+            focusOnOpen: false
+        };
+        $mdPanel.open(config);
     }
 
     function updateDatasources() {
@@ -414,6 +456,7 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
         vm.contentsInfo = {};
         vm.columnWidth = {};
         vm.dataKeys = [];
+        vm.columns = [];
         vm.allEntities = [];
 
         var datasource;
@@ -422,6 +465,60 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
         datasource = vm.datasources[0];
 
         vm.ctx.widgetTitle = utils.createLabelFromDatasource(datasource, vm.entitiesTitle);
+
+        if (vm.displayEntityName) {
+            vm.columns.push(
+                {
+                    name: 'entityName',
+                    label: 'entityName',
+                    title: vm.entityNameColumnTitle,
+                    display: true
+                }
+            );
+            vm.contentsInfo['entityName'] = {
+                useCellContentFunction: false
+            };
+            vm.stylesInfo['entityName'] = {
+                useCellStyleFunction: false
+            };
+            vm.columnWidth['entityName'] = '0px';
+        }
+
+        if (vm.displayEntityLabel) {
+            vm.columns.push(
+                {
+                    name: 'entityLabel',
+                    label: 'entityLabel',
+                    title: vm.entityLabelColumnTitle,
+                    display: true
+                }
+            );
+            vm.contentsInfo['entityLabel'] = {
+                useCellContentFunction: false
+            };
+            vm.stylesInfo['entityLabel'] = {
+                useCellStyleFunction: false
+            };
+            vm.columnWidth['entityLabel'] = '0px';
+        }
+
+        if (vm.displayEntityType) {
+            vm.columns.push(
+                {
+                    name: 'entityType',
+                    label: 'entityType',
+                    title: $translate.instant('entity.entity-type'),
+                    display: true
+                }
+            );
+            vm.contentsInfo['entityType'] = {
+                useCellContentFunction: false
+            };
+            vm.stylesInfo['entityType'] = {
+                useCellStyleFunction: false
+            };
+            vm.columnWidth['entityType'] = '0px';
+        }
 
         for (var d = 0; d < datasource.dataKeys.length; d++ ) {
             dataKey = angular.copy(datasource.dataKeys[d]);
@@ -471,11 +568,16 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
 
             vm.contentsInfo[dataKey.label] = {
                 useCellContentFunction: useCellContentFunction,
-                cellContentFunction: cellContentFunction
+                cellContentFunction: cellContentFunction,
+                units: dataKey.units,
+                decimals: dataKey.decimals
             };
 
             var columnWidth = angular.isDefined(keySettings.columnWidth) ? keySettings.columnWidth : '0px';
             vm.columnWidth[dataKey.label] = columnWidth;
+
+            dataKey.display = true;
+            vm.columns.push(dataKey);
         }
 
         for (var i=0;i<vm.datasources.length;i++) {
@@ -487,6 +589,11 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
                 id: {}
             };
             entity.entityName = datasource.entityName;
+            if (datasource.entityLabel) {
+                entity.entityLabel = datasource.entityLabel;
+            } else {
+                entity.entityLabel = datasource.entityName;
+            }
             if (datasource.entityId) {
                 entity.id.id = datasource.entityId;
             }
@@ -498,11 +605,18 @@ function EntitiesTableWidgetController($element, $scope, $filter, $mdMedia, $tra
             }
             for (d = 0; d < vm.dataKeys.length; d++) {
                 dataKey = vm.dataKeys[d];
-                entity[dataKey.name] = '';
+                entity[dataKey.label] = '';
             }
             vm.allEntities.push(entity);
         }
 
     }
 
+}
+
+/*@ngInject*/
+function DisplayColumnsPanelController(columns) {  //eslint-disable-line
+
+    var vm = this;
+    vm.columns = columns;
 }

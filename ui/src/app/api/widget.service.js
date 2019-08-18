@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -21,15 +21,22 @@ import thingsboardLedLight from '../components/led-light.directive';
 import thingsboardTimeseriesTableWidget from '../widget/lib/timeseries-table-widget';
 import thingsboardAlarmsTableWidget from '../widget/lib/alarms-table-widget';
 import thingsboardEntitiesTableWidget from '../widget/lib/entities-table-widget';
+import thingsboardEntitiesHierarchyWidget from '../widget/lib/entities-hierarchy-widget';
+import thingsboardExtensionsTableWidget from '../widget/lib/extensions-table-widget';
+import thingsboardDateRangeNavigatorWidget from '../widget/lib/date-range-navigator/date-range-navigator';
+import thingsboardMultipleInputWidget from '../widget/lib/multiple-input-widget';
 
 import thingsboardRpcWidgets from '../widget/lib/rpc';
 
 import TbFlot from '../widget/lib/flot-widget';
 import TbAnalogueLinearGauge from '../widget/lib/analogue-linear-gauge';
 import TbAnalogueRadialGauge from '../widget/lib/analogue-radial-gauge';
+import TbAnalogueCompass from '../widget/lib/analogue-compass';
 import TbCanvasDigitalGauge from '../widget/lib/canvas-digital-gauge';
 import TbMapWidget from '../widget/lib/map-widget';
 import TbMapWidgetV2 from '../widget/lib/map-widget2';
+import TripAnimationWidget from '../widget/lib/tripAnimation/trip-animation-widget';
+
 
 import 'jquery.terminal/js/jquery.terminal.min.js';
 import 'jquery.terminal/css/jquery.terminal.min.css';
@@ -40,8 +47,10 @@ import cssjs from '../../vendor/css.js/css';
 import thingsboardTypes from '../common/types.constant';
 import thingsboardUtils from '../common/utils.service';
 
-export default angular.module('thingsboard.api.widget', ['oc.lazyLoad', thingsboardLedLight, thingsboardTimeseriesTableWidget,
-    thingsboardAlarmsTableWidget, thingsboardEntitiesTableWidget, thingsboardRpcWidgets, thingsboardTypes, thingsboardUtils])
+export default angular.module('thingsboard.api.widget', ['oc.lazyLoad', thingsboardLedLight,
+    thingsboardTimeseriesTableWidget, thingsboardAlarmsTableWidget, thingsboardEntitiesTableWidget,
+    thingsboardEntitiesHierarchyWidget, thingsboardExtensionsTableWidget, thingsboardDateRangeNavigatorWidget,
+    thingsboardMultipleInputWidget, thingsboardRpcWidgets, thingsboardTypes, thingsboardUtils, TripAnimationWidget])
     .factory('widgetService', WidgetService)
     .name;
 
@@ -57,6 +66,7 @@ function WidgetService($rootScope, $http, $q, $filter, $ocLazyLoad, $window, $tr
     $window.TbFlot = TbFlot;
     $window.TbAnalogueLinearGauge = TbAnalogueLinearGauge;
     $window.TbAnalogueRadialGauge = TbAnalogueRadialGauge;
+    $window.TbAnalogueCompass = TbAnalogueCompass;
     $window.TbCanvasDigitalGauge = TbCanvasDigitalGauge;
     $window.TbMapWidget = TbMapWidget;
     $window.TbMapWidgetV2 = TbMapWidgetV2;
@@ -295,11 +305,11 @@ function WidgetService($rootScope, $http, $q, $filter, $ocLazyLoad, $window, $tr
         tenantWidgetsBundles = undefined;
     }
 
-    function loadWidgetsBundleCache() {
+    function loadWidgetsBundleCache(config) {
         var deferred = $q.defer();
         if (!allWidgetsBundles) {
             var url = '/api/widgetsBundles';
-            $http.get(url, null).then(function success(response) {
+            $http.get(url, config).then(function success(response) {
                 allWidgetsBundles = response.data;
                 systemWidgetsBundles = [];
                 tenantWidgetsBundles = [];
@@ -323,9 +333,9 @@ function WidgetService($rootScope, $http, $q, $filter, $ocLazyLoad, $window, $tr
     }
 
 
-    function getSystemWidgetsBundles() {
+    function getSystemWidgetsBundles(config) {
         var deferred = $q.defer();
-        loadWidgetsBundleCache().then(
+        loadWidgetsBundleCache(config).then(
             function success() {
                 deferred.resolve(systemWidgetsBundles);
             },
@@ -336,9 +346,9 @@ function WidgetService($rootScope, $http, $q, $filter, $ocLazyLoad, $window, $tr
         return deferred.promise;
     }
 
-    function getTenantWidgetsBundles() {
+    function getTenantWidgetsBundles(config) {
         var deferred = $q.defer();
-        loadWidgetsBundleCache().then(
+        loadWidgetsBundleCache(config).then(
             function success() {
                 deferred.resolve(tenantWidgetsBundles);
             },
@@ -349,9 +359,9 @@ function WidgetService($rootScope, $http, $q, $filter, $ocLazyLoad, $window, $tr
         return deferred.promise;
     }
 
-    function getAllWidgetsBundles() {
+    function getAllWidgetsBundles(config) {
         var deferred = $q.defer();
-        loadWidgetsBundleCache().then(
+        loadWidgetsBundleCache(config).then(
             function success() {
                 deferred.resolve(allWidgetsBundles);
             },

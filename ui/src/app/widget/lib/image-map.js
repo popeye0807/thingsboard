@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import 'leaflet/dist/leaflet.css';
 import * as L from 'leaflet';
 
@@ -21,9 +20,10 @@ const maxZoom = 4;
 
 export default class TbImageMap {
 
-    constructor(ctx, $containerElement, initCallback, imageUrl, posFunction, imageEntityAlias, imageUrlAttribute) {
+    constructor(ctx, $containerElement, utils, initCallback, imageUrl, disableScrollZooming, posFunction, imageEntityAlias, imageUrlAttribute) {
 
         this.ctx = ctx;
+        this.utils = utils;
         this.tooltips = [];
 
         this.$containerElement = $containerElement;
@@ -34,6 +34,7 @@ export default class TbImageMap {
         this.height = 0;
         this.markers = [];
         this.initCallback = initCallback;
+        this.disableScrollZooming = disableScrollZooming;
 
         if (angular.isDefined(posFunction) && posFunction.length > 0) {
             try {
@@ -117,18 +118,15 @@ export default class TbImageMap {
         }
         this.imageUrl = imageUrl;
         var imageMap = this;
-        var testImage = document.createElement('img'); // eslint-disable-line
-        testImage.style.visibility = 'hidden';
-        testImage.onload = function() {
-            imageMap.aspect = testImage.width / testImage.height;
-            document.body.removeChild(testImage); //eslint-disable-line
-            imageMap.onresize(updateImage);
-            if (initCallback) {
-                setTimeout(initCallback, 0); //eslint-disable-line
+        this.utils.loadImageAspect(imageUrl).then(
+            (aspect) => {
+                imageMap.aspect = aspect;
+                imageMap.onresize(updateImage);
+                if (initCallback) {
+                    setTimeout(initCallback, 0); //eslint-disable-line
+                }
             }
-        }
-        document.body.appendChild(testImage); //eslint-disable-line
-        testImage.src = imageUrl;
+        );
     }
 
     onresize(updateImage) {
@@ -168,6 +166,7 @@ export default class TbImageMap {
             this.map = L.map(this.$containerElement[0], {
                 minZoom: 1,
                 maxZoom: maxZoom,
+                scrollWheelZoom: !this.disableScrollZooming,
                 center: center,
                 zoom: 1,
                 crs: L.CRS.Simple,
@@ -229,86 +228,100 @@ export default class TbImageMap {
     }
 
     updateMarkerColor(marker, color) {
+        this.createDefaultMarkerIcon(marker, color, (iconInfo) => {
+            marker.setIcon(iconInfo.icon);
+        });
+    }
+
+    updateMarkerIcon(marker, settings) {
+        this.createMarkerIcon(marker, settings, (iconInfo) => {
+            marker.setIcon(iconInfo.icon);
+            if (settings.showLabel) {
+                marker.unbindTooltip();
+                marker.tooltipOffset = [0, -iconInfo.size[1] * marker.offsetY + 10];
+                marker.bindTooltip('<div style="color: '+ settings.labelColor +';"><b>'+settings.labelText+'</b></div>',
+                    { className: 'tb-marker-label', permanent: true, direction: 'top', offset: marker.tooltipOffset });
+            }
+        });
+    }
+
+    createMarkerIcon(marker, settings, onMarkerIconReady) {
+        var currentImage = settings.currentImage;
+        var opMap = this;
+        if (currentImage && currentImage.url) {
+            this.utils.loadImageAspect(currentImage.url).then(
+                (aspect) => {
+                    if (aspect) {
+                        var width;
+                        var height;
+                        if (aspect > 1) {
+                            width = currentImage.size;
+                            height = currentImage.size / aspect;
+                        } else {
+                            width = currentImage.size * aspect;
+                            height = currentImage.size;
+                        }
+                        var icon = L.icon({
+                            iconUrl: currentImage.url,
+                            iconSize: [width, height],
+                            iconAnchor: [marker.offsetX * width, marker.offsetY * height],
+                            popupAnchor: [0, -height]
+                        });
+                        var iconInfo = {
+                            size: [width, height],
+                            icon: icon
+                        };
+                        onMarkerIconReady(iconInfo);
+                    } else {
+                        opMap.createDefaultMarkerIcon(marker, settings.color, onMarkerIconReady);
+                    }
+                }
+            );
+        } else {
+            this.createDefaultMarkerIcon(marker, settings.color, onMarkerIconReady);
+        }
+    }
+
+    createDefaultMarkerIcon(marker, color, onMarkerIconReady) {
         var pinColor = color.substr(1);
         var icon = L.icon({
             iconUrl: 'https://chart.apis.google.com/chart?chst=d_map_pin_letter&chld=%E2%80%A2|' + pinColor,
             iconSize: [21, 34],
-            iconAnchor: [10, 34],
+            iconAnchor: [21 * marker.offsetX, 34 * marker.offsetY],
             popupAnchor: [0, -34],
             shadowUrl: 'https://chart.apis.google.com/chart?chst=d_map_pin_shadow',
             shadowSize: [40, 37],
             shadowAnchor: [12, 35]
         });
-        marker.setIcon(icon);
+        var iconInfo = {
+            size: [21, 34],
+            icon: icon
+        };
+        onMarkerIconReady(iconInfo);
     }
 
-    updateMarkerImage(marker, settings, image, maxSize) {
-        var testImage = document.createElement('img'); // eslint-disable-line
-        testImage.style.visibility = 'hidden';
-        testImage.onload = function() {
-            var width;
-            var height;
-            var aspect = testImage.width / testImage.height;
-            document.body.removeChild(testImage);  //eslint-disable-line
-            if (aspect > 1) {
-                width = maxSize;
-                height = maxSize / aspect;
-            } else {
-                width = maxSize * aspect;
-                height = maxSize;
-            }
-            var icon = L.icon({
-                iconUrl: image,
-                iconSize: [width, height],
-                iconAnchor: [marker.offsetX * width, marker.offsetY * height],
-                popupAnchor: [0, -height]
-            });
-            marker.setIcon(icon);
-            if (settings.showLabel) {
-                marker.unbindTooltip();
-                marker.tooltipOffset = [0, -height * marker.offsetY + 10];
-                marker.bindTooltip('<div style="color: '+ settings.labelColor +';"><b>'+settings.labelText+'</b></div>',
-                    { className: 'tb-marker-label', permanent: true, direction: 'top', offset: marker.tooltipOffset });
-            }
-        }
-        document.body.appendChild(testImage); //eslint-disable-line
-        testImage.src = image;
-    }
-
-    createMarker(position, settings, onClickListener, markerArgs) {
-        var height = 34;
-        var pinColor = settings.color.substr(1);
-        var icon = L.icon({
-            iconUrl: 'https://chart.apis.google.com/chart?chst=d_map_pin_letter&chld=%E2%80%A2|' + pinColor,
-            iconSize: [21, 34],
-            iconAnchor: [21 * settings.markerOffsetX, 34 * settings.markerOffsetY],
-            popupAnchor: [0, -34],
-            shadowUrl: 'https://chart.apis.google.com/chart?chst=d_map_pin_shadow',
-            shadowSize: [40, 37],
-            shadowAnchor: [12, 35]
-        });
-
+    createMarker(position, dsIndex, settings, onClickListener, markerArgs) {
         var pos = this.posFunction(position.x, position.y);
         var x = pos.x * this.width;
         var y = pos.y * this.height;
         var location = this.pointToLatLng(x, y);
-        var marker = L.marker(location, {icon: icon}).addTo(this.map);
+        var marker = L.marker(location, {});//.addTo(this.map);
         marker.position = position;
         marker.offsetX = settings.markerOffsetX;
         marker.offsetY = settings.markerOffsetY;
-
-        if (settings.showLabel) {
-            marker.tooltipOffset = [0, -height * marker.offsetY + 10];
-            marker.bindTooltip('<div style="color: '+ settings.labelColor +';"><b>'+settings.labelText+'</b></div>',
-                { className: 'tb-marker-label', permanent: true, direction: 'top', offset: marker.tooltipOffset });
-        }
-
-        if (settings.useMarkerImage) {
-            this.updateMarkerImage(marker, settings, settings.markerImage, settings.markerImageSize || 34);
-        }
+        var opMap = this;
+        this.createMarkerIcon(marker, settings, (iconInfo) => {
+            marker.setIcon(iconInfo.icon);
+            if (settings.showLabel) {
+                marker.tooltipOffset = [0, -iconInfo.size[1] * marker.offsetY + 10];
+                marker.bindTooltip('<div style="color: '+ settings.labelColor +';"><b>'+settings.labelText+'</b></div>',
+                    { className: 'tb-marker-label', permanent: true, direction: 'top', offset: marker.tooltipOffset });
+            }
+            marker.addTo(opMap.map);
+        });
 
         if (settings.displayTooltip) {
-            this.createTooltip(marker, settings.tooltipPattern, settings.tooltipReplaceInfo, settings.autocloseTooltip, markerArgs);
+            this.createTooltip(marker, dsIndex, settings, markerArgs);
         }
 
         if (onClickListener) {
@@ -337,15 +350,24 @@ export default class TbImageMap {
         }
     }
 
-    createTooltip(marker, pattern, replaceInfo, autoClose, markerArgs) {
+    createTooltip(marker, dsIndex, settings, markerArgs) {
         var popup = L.popup();
         popup.setContent('');
-        marker.bindPopup(popup, {autoClose: autoClose, closeOnClick: false});
+        marker.bindPopup(popup, {autoClose: settings.autocloseTooltip, closeOnClick: false});
+        if (settings.displayTooltipAction == 'hover') {
+            marker.off('click');
+            marker.on('mouseover', function () {
+                this.openPopup();
+            });
+            marker.on('mouseout', function () {
+                this.closePopup();
+            });
+        }
         this.tooltips.push( {
             markerArgs: markerArgs,
             popup: popup,
-            pattern: pattern,
-            replaceInfo: replaceInfo
+            locationSettings: settings,
+            dsIndex: dsIndex
         });
     }
 
@@ -357,6 +379,21 @@ export default class TbImageMap {
 
     removePolyline(/*polyline*/) {
     }
+
+	createPolygon(/*latLangs, settings*/) {
+	}
+
+	removePolygon(/*latLangs, settings*/) {
+	}
+
+	updatePolygonColor(/*latLangs, settings*/) {
+	}
+
+	getPolygonLatLngs(/*latLangs, settings*/) {
+	}
+
+	setPolygonLatLngs(/*latLangs, settings*/) {
+	}
 
     fitBounds() {
     }

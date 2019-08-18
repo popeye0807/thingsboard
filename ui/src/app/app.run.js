@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,8 +20,13 @@ import UrlHandler from './url.handler';
 export default function AppRun($rootScope, $window, $injector, $location, $log, $state, $mdDialog, $filter, loginService, userService, $translate) {
 
     $window.Flow = Flow;
-    var frame = $window.frameElement;
-    var unauthorizedDialog = null;
+    var frame = null;
+    try {
+        frame = $window.frameElement;
+    } catch(e) {
+        // ie11 fix
+    }
+
     var forbiddenDialog = null;
 
     $rootScope.iframeMode = false;
@@ -107,7 +112,10 @@ export default function AppRun($rootScope, $window, $injector, $location, $log, 
                             showForbiddenDialog();
                         } else if (to.redirectTo) {
                             evt.preventDefault();
-                            $state.go(to.redirectTo, params)
+                            $state.go(to.redirectTo, params);
+                        } else if (to.name === 'home.dashboards.dashboard' && $rootScope.forceFullscreen) {
+                            evt.preventDefault();
+                            $state.go('dashboard', params);
                         }
                     }
                 } else {
@@ -116,11 +124,11 @@ export default function AppRun($rootScope, $window, $injector, $location, $log, 
                         reloadUserFromPublicId();
                     } else if (to.module === 'private') {
                         evt.preventDefault();
-                        if (to.url === '/home' || to.url === '/') {
-                            $state.go('login', params);
-                        } else {
-                            showUnauthorizedDialog();
-                        }
+                        var redirectParams = {};
+                        redirectParams.toName = to.name;
+                        redirectParams.params = params;
+                        userService.setRedirectParams(redirectParams);
+                        $state.go('login', params);
                     }
                 }
             } else {
@@ -132,7 +140,7 @@ export default function AppRun($rootScope, $window, $injector, $location, $log, 
         $rootScope.pageTitle = 'ThingsBoard';
 
         $rootScope.stateChangeSuccessHandle = $rootScope.$on('$stateChangeSuccess', function (evt, to, params) {
-            if (userService.isPublic() && to.name === 'home.dashboards.dashboard') {
+            if (userService.isPublic() && to.name === 'dashboard') {
                 $location.search('publicId', userService.getPublicId());
                 userService.updateLastPublicDashboardId(params.dashboardId);
             }
@@ -148,31 +156,6 @@ export default function AppRun($rootScope, $window, $injector, $location, $log, 
 
     function gotoDefaultPlace(params) {
         userService.gotoDefaultPlace(params);
-    }
-
-    function showUnauthorizedDialog() {
-        if (unauthorizedDialog === null) {
-            $translate(['access.unauthorized-access',
-                        'access.unauthorized-access-text',
-                        'access.unauthorized',
-                        'action.cancel',
-                        'action.sign-in']).then(function (translations) {
-                if (unauthorizedDialog === null) {
-                    unauthorizedDialog = $mdDialog.confirm()
-                        .title(translations['access.unauthorized-access'])
-                        .textContent(translations['access.unauthorized-access-text'])
-                        .ariaLabel(translations['access.unauthorized'])
-                        .cancel(translations['action.cancel'])
-                        .ok(translations['action.sign-in']);
-                    $mdDialog.show(unauthorizedDialog).then(function () {
-                        unauthorizedDialog = null;
-                        $state.go('login');
-                    }, function () {
-                        unauthorizedDialog = null;
-                    });
-                }
-            });
-        }
     }
 
     function showForbiddenDialog() {

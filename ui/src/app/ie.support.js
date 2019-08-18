@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 (function () {
     if (!String.prototype.startsWith) {
         String.prototype.startsWith = function(searchString, position) {
@@ -54,10 +53,23 @@
             return result;
         };
     }
+    if (!String.prototype.includes) {
+        String.prototype.includes = function(search, start) {
+            if (angular.isNumber(start)) {
+                start = 0;
+            }
+
+            if (start + search.length > this.length) {
+                return false;
+            } else {
+                return this.indexOf(search, start) !== -1;
+            }
+        };
+    }
 
     (function (arr) {
         arr.forEach(function (item) {
-            if (item.hasOwnProperty('remove')) {
+            if (Object.prototype.hasOwnProperty.call(item, 'remove')) {
                 return;
             }
             Object.defineProperty(item, 'remove', {

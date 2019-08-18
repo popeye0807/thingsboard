@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import './timeseries-table-widget.scss';
 
 /* eslint-disable import/no-unresolved, import/default */
@@ -45,11 +44,45 @@ function TimeseriesTableWidget() {
 }
 
 /*@ngInject*/
-function TimeseriesTableWidgetController($element, $scope, $filter) {
+function TimeseriesTableWidgetController($element, $scope, $filter, $timeout, types) {
     var vm = this;
+    let dateFormatFilter = 'yyyy-MM-dd HH:mm:ss';
 
     vm.sources = [];
     vm.sourceIndex = 0;
+    vm.defaultPageSize = 10;
+    vm.defaultSortOrder = '-0';
+    vm.query = {
+        "search": null
+    };
+
+    vm.enterFilterMode = enterFilterMode;
+    vm.exitFilterMode = exitFilterMode;
+    vm.onRowClick = onRowClick;
+    vm.onActionButtonClick = onActionButtonClick;
+    vm.actionCellDescriptors = [];
+
+    function enterFilterMode () {
+        vm.query.search = '';
+        vm.ctx.hideTitlePanel = true;
+        $timeout(()=>{
+            angular.element(vm.ctx.$container).find('.searchInput').focus();
+        })
+    }
+
+    function exitFilterMode () {
+        vm.query.search = null;
+        vm.ctx.hideTitlePanel = false;
+    }
+
+    vm.searchAction = {
+        name: 'action.search',
+        show: true,
+        onAction: function() {
+            vm.enterFilterMode();
+        },
+        icon: 'search'
+    };
 
     $scope.$watch('vm.ctx', function() {
        if (vm.ctx) {
@@ -62,6 +95,8 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
     });
 
     function initialize() {
+        vm.ctx.widgetActions = [ vm.searchAction ];
+        vm.actionCellDescriptors = vm.ctx.actionsApi.getActionDescriptors('actionCellButton');
         vm.showTimestamp = vm.settings.showTimestamp !== false;
         var origColor = vm.widgetConfig.color || 'rgba(0, 0, 0, 0.87)';
         var defaultColor = tinycolor(origColor);
@@ -108,6 +143,8 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
         cssParser.createStyleElement(namespace, cssString);
         $element.addClass(namespace);
 
+        vm.displayPagination = angular.isDefined(vm.settings.displayPagination) ? vm.settings.displayPagination : true;
+
         function hashCode(str) {
             var hash = 0;
             var i, char;
@@ -146,6 +183,28 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
         updatePage(source);
     }
 
+    function onRowClick($event, row) {
+        if ($event) {
+            $event.stopPropagation();
+        }
+        var descriptors = vm.ctx.actionsApi.getActionDescriptors('rowClick');
+        if (descriptors.length) {
+						var entityId = vm.ctx.activeEntityInfo.entityId;
+            var entityName = vm.ctx.activeEntityInfo.entityName;
+            vm.ctx.actionsApi.handleWidgetAction($event, descriptors[0], entityId, entityName, row);
+        }
+    }
+
+    function onActionButtonClick($event, row, actionDescriptor) {
+        if ($event) {
+            $event.stopPropagation();
+        }
+				var entityId = vm.ctx.activeEntityInfo.entityId;
+        var entityName = vm.ctx.activeEntityInfo.entityName;
+        vm.ctx.actionsApi.handleWidgetAction($event, actionDescriptor, entityId, entityName, row);
+    }
+
+
     vm.cellStyle = function(source, index, value) {
         var style = {};
         if (index > 0) {
@@ -163,7 +222,7 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
 
     vm.cellContent = function(source, index, row, value) {
         if (index === 0) {
-            return $filter('date')(value, 'yyyy-MM-dd HH:mm:ss');
+            return $filter('date')(value, dateFormatFilter);
         } else {
             var strContent = '';
             if (angular.isDefined(value)) {
@@ -184,7 +243,9 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
                     content = strContent;
                 }
             } else {
-                content = vm.ctx.utils.formatValue(value, contentInfo.decimals, contentInfo.units);
+                var decimals = (contentInfo.decimals || contentInfo.decimals === 0) ? contentInfo.decimals : vm.widgetConfig.decimals;
+                var units = contentInfo.units || vm.widgetConfig.units;
+                content = vm.ctx.utils.formatValue(value, decimals, units, true);
             }
             return content;
         }
@@ -193,8 +254,28 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
     $scope.$watch('vm.sourceIndex', function(newIndex, oldIndex) {
         if (newIndex != oldIndex) {
             updateSourceData(vm.sources[vm.sourceIndex]);
+            updateActiveEntityInfo();
         }
     });
+
+    function updateActiveEntityInfo() {
+        var source = vm.sources[vm.sourceIndex];
+        var activeEntityInfo = null;
+        if (source) {
+            var datasource = source.datasource;
+            if (datasource.type === types.datasourceType.entity &&
+                datasource.entityType && datasource.entityId) {
+                activeEntityInfo = {
+                    entityId: {
+                        entityType: datasource.entityType,
+                        id: datasource.entityId
+                    },
+                    entityName: datasource.entityName
+                };
+            }
+        }
+        vm.ctx.activeEntityInfo = activeEntityInfo;
+    }
 
     function updateDatasources() {
         vm.sources = [];
@@ -211,7 +292,7 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
                 source.data = [];
                 source.rawData = [];
                 source.query = {
-                    limit: 5,
+                    limit: vm.settings.defaultPageSize || 10,
                     page: 1,
                     order: '-0'
                 }
@@ -279,6 +360,7 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
                 vm.sources.push(source);
             }
         }
+        updateActiveEntityInfo();
     }
 
     function updatePage(source) {
@@ -287,7 +369,30 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
     }
 
     function reorder(source) {
+        let searchRegExp = new RegExp(vm.query.search);
+
         source.data = $filter('orderBy')(source.data, source.query.order);
+        if (vm.query.search !== null) {
+            source.data = source.data.filter(function(item){
+                for (let i = 0; i < item.length; i++) {
+                    if (vm.showTimestamp) {
+                        if (i === 0) {
+                            if (searchRegExp.test($filter('date')(item[i], dateFormatFilter))) {
+                                return true;
+                            }
+                        } else {
+                            if (searchRegExp.test(item[i])) {
+                                return true;
+                            }
+                        }
+                    } else {
+                        if (searchRegExp.test(item[i])) {
+                            return true;
+                        }
+                    }
+                }
+            });
+        }
     }
 
     function convertData(data) {
@@ -311,7 +416,18 @@ function TimeseriesTableWidgetController($element, $scope, $filter) {
         }
         var rows = [];
         for (var t in rowsMap) {
-            rows.push(rowsMap[t]);
+            if (vm.settings.hideEmptyLines)
+			{
+                var hideLine = true;
+                for (var _c = 0; (_c < data.length) && hideLine; _c++) {
+                    if (rowsMap[t][_c+1])
+                        hideLine = false;
+                }
+                if (!hideLine)
+                   rows.push(rowsMap[t]);
+            }
+            else
+                rows.push(rowsMap[t]);
         }
         return rows;
     }

@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
- 
 import $ from 'jquery';
 import tinycolor from 'tinycolor2';
 import moment from 'moment';
@@ -138,9 +137,11 @@ export default class TbFlot {
                 });
                 content += dateDiv.prop('outerHTML');
                 if (tbFlot.ctx.tooltipIndividual) {
-                    var seriesHoverInfo = hoverInfo.seriesHover[seriesIndex];
-                    if (seriesHoverInfo) {
-                        content += seriesInfoDivFromInfo(seriesHoverInfo, seriesIndex);
+                    var found = hoverInfo.seriesHover.filter((seriesHover) => {
+                        return seriesHover.index === seriesIndex;
+                    });
+                    if (found && found.length) {
+                        content += seriesInfoDivFromInfo(found[0], seriesIndex);
                     }
                 } else {
                     var seriesDiv = $('<div></div>');
@@ -162,7 +163,7 @@ export default class TbFlot {
                             if (i == hoverInfo.seriesHover.length) {
                                 break;
                             }
-                            seriesHoverInfo = hoverInfo.seriesHover[i];
+                            var seriesHoverInfo = hoverInfo.seriesHover[i];
                             columnContent += seriesInfoDivFromInfo(seriesHoverInfo, seriesIndex);
                         }
                         columnDiv.html(columnContent);
@@ -238,6 +239,7 @@ export default class TbFlot {
                 if (this.ticksFormatterFunction) {
                     return this.ticksFormatterFunction(value);
                 }
+
                 var factor = this.tickDecimals ? Math.pow(10, this.tickDecimals) : 1,
                     formatted = "" + Math.round(value * factor) / factor;
                 if (this.tickDecimals != null) {
@@ -248,9 +250,12 @@ export default class TbFlot {
                         formatted = (precision ? formatted : formatted + ".") + ("" + factor).substr(1, this.tickDecimals - precision);
                     }
                 }
-                formatted += ' ' + this.tickUnits;
+                if (this.tickUnits) {
+                     formatted += ' ' + this.tickUnits;
+                }
+
                 return formatted;
-            }
+            };
 
             this.yaxis.tickFormatter = ctx.yAxisTickFormatter;
 
@@ -262,6 +267,16 @@ export default class TbFlot {
                 this.yaxis.labelFont.color = this.yaxis.font.color;
                 this.yaxis.labelFont.size = this.yaxis.font.size+2;
                 this.yaxis.labelFont.weight = "bold";
+                if (angular.isNumber(settings.yaxis.tickSize)) {
+                    this.yaxis.tickSize = settings.yaxis.tickSize;
+                } else {
+                    this.yaxis.tickSize = null;
+                }
+                if (angular.isNumber(settings.yaxis.tickDecimals)) {
+                    this.yaxis.tickDecimals = settings.yaxis.tickDecimals
+                } else {
+                    this.yaxis.tickDecimals = null;
+                }
                 if (settings.yaxis.ticksFormatter && settings.yaxis.ticksFormatter.length) {
                     try {
                         this.yaxis.ticksFormatterFunction = new Function('value', settings.yaxis.ticksFormatter);
@@ -320,6 +335,7 @@ export default class TbFlot {
                         lineWidth: 0,
                         fill: 0.9
                 }
+                ctx.defaultBarWidth = settings.defaultBarWidth || 600;
             }
 
             if (this.chartType === 'state') {
@@ -334,7 +350,7 @@ export default class TbFlot {
                 pie: {
                     show: true,
                     label: {
-                        show: settings.showLabels === true
+                        show: settings.showLabels || settings.showPercentages
                     },
                     radius: settings.radius || 1,
                     innerRadius: settings.innerRadius || 0,
@@ -350,6 +366,8 @@ export default class TbFlot {
                     }
                 }
             }
+            options.grid.clickable = true;
+                
             if (settings.stroke) {
                 options.series.pie.stroke.color = settings.stroke.color || '#fff';
                 options.series.pie.stroke.width = settings.stroke.width || 0;
@@ -357,7 +375,11 @@ export default class TbFlot {
 
             if (options.series.pie.label.show) {
                 options.series.pie.label.formatter = function (label, series) {
-                    return "<div class='pie-label'>" + series.dataKey.label + "<br/>" + Math.round(series.percent) + "%</div>";
+                    return "<div class='pie-label'>" +
+                        (settings.showLabels ? series.dataKey.label : "") +
+                        (settings.showLabels && settings.showPercentages ? "<br/>" : "") +
+                        (settings.showPercentages ? Math.round(series.percent) + "%" : "") +
+                        "</div>";
                 }
                 options.series.pie.label.radius = 3/4;
                 options.series.pie.label.background = {
@@ -405,9 +427,13 @@ export default class TbFlot {
                 }
             }
             series.lines = {
-                fill: keySettings.fillLines === true,
-                show: this.chartType === 'line' ? keySettings.showLines !== false : keySettings.showLines === true
+                fill: keySettings.fillLines === true
             };
+            if (this.chartType === 'line' || this.chartType === 'state') {
+                series.lines.show = keySettings.showLines !== false
+            } else {
+                series.lines.show = keySettings.showLines === true;
+            }
 
             if (angular.isDefined(keySettings.lineWidth)) {
                 series.lines.lineWidth = keySettings.lineWidth;
@@ -459,7 +485,11 @@ export default class TbFlot {
         this.options.yaxes = angular.copy(this.yaxes);
         if (this.chartType === 'line' || this.chartType === 'bar' || this.chartType === 'state') {
             if (this.chartType === 'bar') {
-                this.options.series.bars.barWidth = this.subscription.timeWindow.interval * 0.6;
+                if (this.subscription.timeWindowConfig.aggregation && this.subscription.timeWindowConfig.aggregation.type === 'NONE') {
+                    this.options.series.bars.barWidth = this.ctx.defaultBarWidth;
+                } else {
+                    this.options.series.bars.barWidth = this.subscription.timeWindow.interval * 0.6;
+                }
             }
             this.options.xaxis.min = this.subscription.timeWindow.minTime;
             this.options.xaxis.max = this.subscription.timeWindow.maxTime;
@@ -480,17 +510,26 @@ export default class TbFlot {
                     ? this.subscription.data[i].data[0][1] : 0;
             }
             this.pieDataRendered();
-            this.ctx.plot = $.plot(this.$element, this.pieData, this.options);
-        } else {
-            this.ctx.plot = $.plot(this.$element, this.subscription.data, this.options);
         }
+        this.ctx.plotInited = true;
+        this.createPlot();
     }
 
     createYAxis(keySettings, units) {
         var yaxis = angular.copy(this.yaxis);
+        var tickDecimals, tickSize;
 
         var label = keySettings.axisTitle && keySettings.axisTitle.length ? keySettings.axisTitle : yaxis.label;
-        var tickDecimals = angular.isDefined(keySettings.axisTickDecimals) ? keySettings.axisTickDecimals : 0;
+        if (angular.isNumber(keySettings.axisTickDecimals)) {
+            tickDecimals = keySettings.axisTickDecimals;
+        } else {
+            tickDecimals = yaxis.tickDecimals;
+        }
+        if (angular.isNumber(keySettings.axisTickSize)) {
+            tickSize = keySettings.axisTickSize;
+        } else {
+            tickSize = yaxis.tickSize;
+        }
         var position = keySettings.axisPosition && keySettings.axisPosition.length ? keySettings.axisPosition : "left";
 
         var min = angular.isDefined(keySettings.axisMin) ? keySettings.axisMin : yaxis.min;
@@ -501,7 +540,12 @@ export default class TbFlot {
         yaxis.max = max;
         yaxis.tickUnits = units;
         yaxis.tickDecimals = tickDecimals;
-        yaxis.alignTicksWithAxis = position == "right" ? 1 : null;
+        yaxis.tickSize = tickSize;
+        if (position === "right" && tickSize === null) {
+            yaxis.alignTicksWithAxis = 1;
+        } else {
+            yaxis.alignTicksWithAxis = null;
+        }
         yaxis.position = position;
 
         yaxis.keysInfo = [];
@@ -546,7 +590,7 @@ export default class TbFlot {
                                     }
                                 }
                                 yaxis.hidden = hidden;
-                                var newIndex = -1;
+                                var newIndex = 1;
                                 if (!yaxis.hidden) {
                                     this.options.yaxes.push(yaxis);
                                     newIndex = this.options.yaxes.length;
@@ -567,7 +611,11 @@ export default class TbFlot {
                     this.options.xaxis.min = this.subscription.timeWindow.minTime;
                     this.options.xaxis.max = this.subscription.timeWindow.maxTime;
                     if (this.chartType === 'bar') {
-                        this.options.series.bars.barWidth = this.subscription.timeWindow.interval * 0.6;
+                        if (this.subscription.timeWindowConfig.aggregation && this.subscription.timeWindowConfig.aggregation.type === 'NONE') {
+                            this.options.series.bars.barWidth = this.ctx.defaultBarWidth;
+                        } else {
+                            this.options.series.bars.barWidth = this.subscription.timeWindow.interval * 0.6;
+                        }
                     }
 
                     if (axisVisibilityChanged) {
@@ -576,18 +624,19 @@ export default class TbFlot {
                         this.ctx.plot.getOptions().xaxes[0].min = this.subscription.timeWindow.minTime;
                         this.ctx.plot.getOptions().xaxes[0].max = this.subscription.timeWindow.maxTime;
                         if (this.chartType === 'bar') {
-                            this.ctx.plot.getOptions().series.bars.barWidth = this.subscription.timeWindow.interval * 0.6;
+                            if (this.subscription.timeWindowConfig.aggregation && this.subscription.timeWindowConfig.aggregation.type === 'NONE') {
+                                this.ctx.plot.getOptions().series.bars.barWidth = this.ctx.defaultBarWidth;
+                            } else {
+                                this.ctx.plot.getOptions().series.bars.barWidth = this.subscription.timeWindow.interval * 0.6;
+                            }
                         }
-                        this.ctx.plot.setData(this.subscription.data);
-                        this.ctx.plot.setupGrid();
-                        this.ctx.plot.draw();
+                        this.updateData();
                     }
                 } else if (this.chartType === 'pie') {
                     if (this.ctx.animatedPie) {
                         this.nextPieDataAnimation(true);
                     } else {
-                        this.ctx.plot.setData(this.subscription.data);
-                        this.ctx.plot.draw();
+                        this.updateData();
                     }
                 }
             } else if (this.isMouseInteraction && this.ctx.plot){
@@ -599,13 +648,105 @@ export default class TbFlot {
         }
     }
 
+    updateData() {
+        this.ctx.plot.setData(this.subscription.data);
+        if (this.chartType !== 'pie') {
+            this.ctx.plot.setupGrid();
+        }
+        this.ctx.plot.draw();
+    }
+
     resize() {
-        if (this.ctx.plot) {
-            this.ctx.plot.resize();
-            if (this.chartType !== 'pie') {
-                this.ctx.plot.setupGrid();
+        if (this.resizeTimeoutHandle) {
+            this.ctx.$scope.$timeout.cancel(this.resizeTimeoutHandle);
+            this.resizeTimeoutHandle = null;
+        }
+        if (this.ctx.plot && this.ctx.plotInited) {
+            var width = this.$element.width();
+            var height = this.$element.height();
+            if (width && height) {
+                this.ctx.plot.resize();
+                if (this.chartType !== 'pie') {
+                    this.ctx.plot.setupGrid();
+                }
+                this.ctx.plot.draw();
+            } else {
+                var tbFlot = this;
+                this.resizeTimeoutHandle = this.ctx.$scope.$timeout(function() {
+                    tbFlot.resize();
+                }, 30, false);
             }
-            this.ctx.plot.draw();
+        }
+    }
+
+
+    redrawPlot() {
+        if (this.ctx.plot && this.ctx.plotInited) {
+            this.ctx.plot.destroy();
+            this.ctx.plot = null;
+            this.createPlot();
+        }
+    }
+
+    createPlot() {
+        if (this.createPlotTimeoutHandle) {
+            this.ctx.$scope.$timeout.cancel(this.createPlotTimeoutHandle);
+            this.createPlotTimeoutHandle = null;
+        }
+        if (this.ctx.plotInited && !this.ctx.plot) {
+            var width = this.$element.width();
+            var height = this.$element.height();
+            if (width && height) {
+                if (this.chartType === 'pie' && this.ctx.animatedPie) {
+                    this.ctx.plot = $.plot(this.$element, this.pieData, this.options);
+                } else {
+                    this.ctx.plot = $.plot(this.$element, this.subscription.data, this.options);
+                }
+            } else {
+                var tbFlot = this;
+                this.createPlotTimeoutHandle = this.ctx.$scope.$timeout(function() {
+                    tbFlot.createPlot();
+                }, 30, false);
+            }
+        }
+    }
+
+    destroy() {
+        this.cleanup();
+        if (this.ctx.plot) {
+            this.ctx.plot.destroy();
+            this.ctx.plot = null;
+            this.ctx.plotInited = false;
+        }
+    }
+
+    cleanup() {
+        if (this.updateTimeoutHandle) {
+            this.ctx.$scope.$timeout.cancel(this.updateTimeoutHandle);
+            this.updateTimeoutHandle = null;
+        }
+        if (this.createPlotTimeoutHandle) {
+            this.ctx.$scope.$timeout.cancel(this.createPlotTimeoutHandle);
+            this.createPlotTimeoutHandle = null;
+        }
+        if (this.resizeTimeoutHandle) {
+            this.ctx.$scope.$timeout.cancel(this.resizeTimeoutHandle);
+            this.resizeTimeoutHandle = null;
+        }
+    }
+
+    checkMouseEvents() {
+        var enabled = !this.ctx.isMobile &&  !this.ctx.isEdit;
+        if (angular.isUndefined(this.mouseEventsEnabled) || this.mouseEventsEnabled != enabled) {
+            this.mouseEventsEnabled = enabled;
+            if (this.$element) {
+                if (enabled) {
+                    this.enableMouseEvents();
+                } else {
+                    this.disableMouseEvents();
+                }
+                this.redrawPlot();
+            }
         }
     }
 
@@ -656,6 +797,11 @@ export default class TbFlot {
                         "type": "boolean",
                         "default": false
                     },
+                    "showPercentages": {
+                        "title": "Show percentages",
+                        "type": "boolean",
+                        "default": false
+                    },
                     "fontColor": {
                         "title": "Font color",
                         "type": "string",
@@ -685,6 +831,7 @@ export default class TbFlot {
                     ]
                 },
                 "showLabels",
+                "showPercentages",
                 {
                     "key": "fontColor",
                     "type": "color"
@@ -694,226 +841,245 @@ export default class TbFlot {
         }
     }
 
-    static get settingsSchema() {
-        return {
+    static settingsSchema(chartType) {
+
+        var schema = {
             "schema": {
                 "type": "object",
                 "title": "Settings",
                 "properties": {
-                    "stack": {
-                        "title": "Stacking",
-                        "type": "boolean",
-                        "default": false
-                    },
-                    "smoothLines": {
-                        "title": "Display smooth (curved) lines",
-                        "type": "boolean",
-                        "default": false
-                    },
-                    "shadowSize": {
-                        "title": "Shadow size",
-                        "type": "number",
-                        "default": 4
-                    },
-                    "fontColor": {
-                        "title": "Font color",
+                }
+            }
+        };
+
+        var properties = schema["schema"]["properties"];
+        properties["stack"] = {
+            "title": "Stacking",
+            "type": "boolean",
+            "default": false
+        };
+        if (chartType === 'graph') {
+            properties["smoothLines"] = {
+                "title": "Display smooth (curved) lines",
+                "type": "boolean",
+                "default": false
+            };
+        }
+        if (chartType === 'bar') {
+            properties["defaultBarWidth"] = {
+                "title": "Default bar width for non-aggregated data (milliseconds)",
+                "type": "number",
+                "default": 600
+            };
+        }
+        properties["shadowSize"] = {
+            "title": "Shadow size",
+            "type": "number",
+            "default": 4
+        };
+        properties["fontColor"] =  {
+            "title": "Font color",
+            "type": "string",
+            "default": "#545454"
+        };
+        properties["fontSize"] = {
+            "title": "Font size",
+            "type": "number",
+            "default": 10
+        };
+        properties["tooltipIndividual"] = {
+            "title": "Hover individual points",
+            "type": "boolean",
+            "default": false
+        };
+        properties["tooltipCumulative"] = {
+            "title": "Show cumulative values in stacking mode",
+            "type": "boolean",
+            "default": false
+        };
+        properties["tooltipValueFormatter"] = {
+            "title": "Tooltip value format function, f(value)",
+            "type": "string",
+            "default": ""
+        };
+
+        properties["grid"] = {
+            "title": "Grid settings",
+                "type": "object",
+                "properties": {
+                "color": {
+                    "title": "Primary color",
                         "type": "string",
                         "default": "#545454"
-                    },
-                    "fontSize": {
-                        "title": "Font size",
-                        "type": "number",
-                        "default": 10
-                    },
-                    "tooltipIndividual": {
-                        "title": "Hover individual points",
-                        "type": "boolean",
-                        "default": false
-                    },
-                    "tooltipCumulative": {
-                        "title": "Show cumulative values in stacking mode",
-                        "type": "boolean",
-                        "default": false
-                    },
-                    "tooltipValueFormatter": {
-                        "title": "Tooltip value format function, f(value)",
-                        "type": "string",
-                        "default": ""
-                    },
-                    "grid": {
-                        "title": "Grid settings",
-                        "type": "object",
-                        "properties": {
-                            "color": {
-                                "title": "Primary color",
-                                "type": "string",
-                                "default": "#545454"
-                            },
-                            "backgroundColor": {
-                                "title": "Background color",
-                                "type": "string",
-                                "default": null
-                            },
-                            "tickColor": {
-                                "title": "Ticks color",
-                                "type": "string",
-                                "default": "#DDDDDD"
-                            },
-                            "outlineWidth": {
-                                "title": "Grid outline/border width (px)",
-                                "type": "number",
-                                "default": 1
-                            },
-                            "verticalLines": {
-                                "title": "Show vertical lines",
-                                "type": "boolean",
-                                "default": true
-                            },
-                            "horizontalLines": {
-                                "title": "Show horizontal lines",
-                                "type": "boolean",
-                                "default": true
-                            }
-                        }
-                    },
-                    "xaxis": {
-                        "title": "X axis settings",
-                        "type": "object",
-                        "properties": {
-                            "showLabels": {
-                                "title": "Show labels",
-                                "type": "boolean",
-                                "default": true
-                            },
-                            "title": {
-                                "title": "Axis title",
-                                "type": "string",
-                                "default": null
-                            },
-                            "titleAngle": {
-                                "title": "Axis title's angle in degrees",
-                                "type": "number",
-                                "default": 0
-                            },
-                            "color": {
-                                "title": "Ticks color",
-                                "type": "string",
-                                "default": null
-                            }
-                        }
-                    },
-                    "yaxis": {
-                        "title": "Y axis settings",
-                        "type": "object",
-                        "properties": {
-                            "min": {
-                                "title": "Minimum value on the scale",
-                                "type": "number",
-                                "default": null
-                            },
-                            "max": {
-                                "title": "Maximum value on the scale",
-                                "type": "number",
-                                "default": null
-                            },
-                            "showLabels": {
-                                "title": "Show labels",
-                                "type": "boolean",
-                                "default": true
-                            },
-                            "title": {
-                                "title": "Axis title",
-                                "type": "string",
-                                "default": null
-                            },
-                            "titleAngle": {
-                                "title": "Axis title's angle in degrees",
-                                "type": "number",
-                                "default": 0
-                            },
-                            "color": {
-                                "title": "Ticks color",
-                                "type": "string",
-                                "default": null
-                            },
-                            "ticksFormatter": {
-                                "title": "Ticks formatter function, f(value)",
-                                "type": "string",
-                                "default": ""
-                            }
-                        }
-                    }
                 },
-                "required": []
-            },
-            "form": [
-                "stack",
-                "smoothLines",
-                "shadowSize",
+                "backgroundColor": {
+                    "title": "Background color",
+                        "type": "string",
+                        "default": null
+                },
+                "tickColor": {
+                    "title": "Ticks color",
+                        "type": "string",
+                        "default": "#DDDDDD"
+                },
+                "outlineWidth": {
+                    "title": "Grid outline/border width (px)",
+                        "type": "number",
+                        "default": 1
+                },
+                "verticalLines": {
+                    "title": "Show vertical lines",
+                        "type": "boolean",
+                        "default": true
+                },
+                "horizontalLines": {
+                    "title": "Show horizontal lines",
+                        "type": "boolean",
+                        "default": true
+                }
+            }
+        };
+
+        properties["xaxis"] = {
+            "title": "X axis settings",
+            "type": "object",
+            "properties": {
+                "showLabels": {
+                    "title": "Show labels",
+                    "type": "boolean",
+                    "default": true
+                },
+                "title": {
+                    "title": "Axis title",
+                    "type": "string",
+                    "default": null
+                },
+                "color": {
+                    "title": "Ticks color",
+                    "type": "string",
+                    "default": null
+                }
+            }
+        };
+
+        properties["yaxis"] = {
+            "title": "Y axis settings",
+            "type": "object",
+            "properties": {
+                "min": {
+                    "title": "Minimum value on the scale",
+                    "type": "number",
+                    "default": null
+                },
+                "max": {
+                    "title": "Maximum value on the scale",
+                    "type": "number",
+                    "default": null
+                },
+                "showLabels": {
+                    "title": "Show labels",
+                    "type": "boolean",
+                    "default": true
+                },
+                "title": {
+                    "title": "Axis title",
+                    "type": "string",
+                    "default": null
+                },
+                "color": {
+                    "title": "Ticks color",
+                    "type": "string",
+                    "default": null
+                },
+                "ticksFormatter": {
+                    "title": "Ticks formatter function, f(value)",
+                    "type": "string",
+                    "default": ""
+                },
+                "tickDecimals": {
+                    "title": "The number of decimals to display",
+                    "type": "number",
+                    "default": 0
+                },
+                "tickSize": {
+                    "title": "Step size between ticks",
+                    "type": "number",
+                    "default": null
+                }
+            }
+        };
+
+        schema["schema"]["required"] = [];
+        schema["form"] = ["stack"];
+        if (chartType === 'graph') {
+            schema["form"].push("smoothLines");
+        }
+        if (chartType === 'bar') {
+            schema["form"].push("defaultBarWidth");
+        }
+        schema["form"].push("shadowSize");
+        schema["form"].push({
+            "key": "fontColor",
+            "type": "color"
+        });
+        schema["form"].push("fontSize");
+        schema["form"].push("tooltipIndividual");
+        schema["form"].push("tooltipCumulative");
+        schema["form"].push({
+            "key": "tooltipValueFormatter",
+            "type": "javascript"
+        });
+        schema["form"].push({
+            "key": "grid",
+            "items": [
                 {
-                    "key": "fontColor",
+                    "key": "grid.color",
                     "type": "color"
                 },
-                "fontSize",
-                "tooltipIndividual",
-                "tooltipCumulative",
                 {
-                    "key": "tooltipValueFormatter",
-                    "type": "javascript"
+                    "key": "grid.backgroundColor",
+                    "type": "color"
                 },
                 {
-                    "key": "grid",
-                    "items": [
-                        {
-                            "key": "grid.color",
-                            "type": "color"
-                        },
-                        {
-                            "key": "grid.backgroundColor",
-                            "type": "color"
-                        },
-                        {
-                            "key": "grid.tickColor",
-                            "type": "color"
-                        },
-                        "grid.outlineWidth",
-                        "grid.verticalLines",
-                        "grid.horizontalLines"
-                    ]
+                    "key": "grid.tickColor",
+                    "type": "color"
                 },
-                {
-                    "key": "xaxis",
-                    "items": [
-                        "xaxis.showLabels",
-                        "xaxis.title",
-                        "xaxis.titleAngle",
-                        {
-                            "key": "xaxis.color",
-                            "type": "color"
-                        }
-                    ]
-                },
-                {
-                    "key": "yaxis",
-                    "items": [
-                        "yaxis.min",
-                        "yaxis.max",
-                        "yaxis.showLabels",
-                        "yaxis.title",
-                        "yaxis.titleAngle",
-                        {
-                            "key": "yaxis.color",
-                            "type": "color"
-                        },
-                        {
-                            "key": "yaxis.ticksFormatter",
-                            "type": "javascript"
-                        }
-                    ]
-                }
-
+                "grid.outlineWidth",
+                "grid.verticalLines",
+                "grid.horizontalLines"
             ]
-        }
+        });
+        schema["form"].push({
+            "key": "xaxis",
+            "items": [
+                "xaxis.showLabels",
+                "xaxis.title",
+                {
+                    "key": "xaxis.color",
+                    "type": "color"
+                }
+            ]
+        });
+        schema["form"].push({
+            "key": "yaxis",
+            "items": [
+                "yaxis.min",
+                "yaxis.max",
+                "yaxis.tickDecimals",
+                "yaxis.tickSize",
+                "yaxis.showLabels",
+                "yaxis.title",
+                {
+                    "key": "yaxis.color",
+                    "type": "color"
+                },
+                {
+                    "key": "yaxis.ticksFormatter",
+                    "type": "javascript"
+                }
+            ]
+        });
+        return schema;
     }
 
     static get pieDatakeySettingsSchema() {
@@ -922,24 +1088,24 @@ export default class TbFlot {
 
     static datakeySettingsSchema(defaultShowLines) {
         return {
-                "schema": {
+            "schema": {
                 "type": "object",
-                    "title": "DataKeySettings",
-                    "properties": {
+                "title": "DataKeySettings",
+                "properties": {
                     "showLines": {
                         "title": "Show lines",
-                            "type": "boolean",
-                            "default": defaultShowLines
+                        "type": "boolean",
+                        "default": defaultShowLines
                     },
                     "fillLines": {
                         "title": "Fill lines",
-                            "type": "boolean",
-                            "default": false
+                        "type": "boolean",
+                        "default": false
                     },
                     "showPoints": {
                         "title": "Show points",
-                            "type": "boolean",
-                            "default": false
+                        "type": "boolean",
+                        "default": false
                     },
                     "tooltipValueFormatter": {
                         "title": "Tooltip value format function, f(value)",
@@ -969,7 +1135,12 @@ export default class TbFlot {
                     "axisTickDecimals": {
                         "title": "Axis tick number of digits after floating point",
                         "type": "number",
-                        "default": 0
+                        "default": null
+                    },
+                    "axisTickSize": {
+                        "title": "Axis step size between ticks",
+                        "type": "number",
+                        "default": null
                     },
                     "axisPosition": {
                         "title": "Axis position",
@@ -984,7 +1155,7 @@ export default class TbFlot {
                 },
                 "required": ["showLines", "fillLines", "showPoints"]
             },
-                "form": [
+            "form": [
                 "showLines",
                 "fillLines",
                 "showPoints",
@@ -997,6 +1168,7 @@ export default class TbFlot {
                 "axisMax",
                 "axisTitle",
                 "axisTickDecimals",
+                "axisTickSize",
                 {
                     "key": "axisPosition",
                     "type": "rc-select",
@@ -1020,46 +1192,6 @@ export default class TbFlot {
         }
     }
 
-    checkMouseEvents() {
-        var enabled = !this.ctx.isMobile &&  !this.ctx.isEdit;
-        if (angular.isUndefined(this.mouseEventsEnabled) || this.mouseEventsEnabled != enabled) {
-            this.mouseEventsEnabled = enabled;
-            if (this.$element) {
-                if (enabled) {
-                    this.enableMouseEvents();
-                } else {
-                    this.disableMouseEvents();
-                }
-                if (this.ctx.plot) {
-                    this.ctx.plot.destroy();
-                    if (this.chartType === 'pie' && this.ctx.animatedPie) {
-                        this.ctx.plot = $.plot(this.$element, this.pieData, this.options);
-                    } else {
-                        this.ctx.plot = $.plot(this.$element, this.subscription.data, this.options);
-                    }
-                }
-            }
-        }
-    }
-
-    redrawPlot() {
-        if (this.ctx.plot) {
-            this.ctx.plot.destroy();
-            if (this.chartType === 'pie' && this.ctx.animatedPie) {
-                this.ctx.plot = $.plot(this.$element, this.pieData, this.options);
-            } else {
-                this.ctx.plot = $.plot(this.$element, this.subscription.data, this.options);
-            }
-        }
-    }
-
-    destroy() {
-        if (this.ctx.plot) {
-            this.ctx.plot.destroy();
-            this.ctx.plot = null;
-        }
-    }
-
     enableMouseEvents() {
         this.$element.css('pointer-events','');
         this.$element.addClass('mouse-events');
@@ -1069,6 +1201,9 @@ export default class TbFlot {
 
         if (!this.flotHoverHandler) {
             this.flotHoverHandler =  function (event, pos, item) {
+                if (!tbFlot.ctx.plot) {
+                    return;
+                }
                 if (!tbFlot.ctx.tooltipIndividual || item) {
 
                     var multipleModeTooltip = !tbFlot.ctx.tooltipIndividual;
@@ -1096,16 +1231,23 @@ export default class TbFlot {
 
                     if (tooltipHtml) {
                         tbFlot.ctx.tooltip.html(tooltipHtml)
-                            .css({top: pageY+5, left: 0})
+                            .css({top: 0, left: 0})
                             .fadeIn(200);
 
                         var windowWidth = $( window ).width();  //eslint-disable-line
+                        var windowHeight = $( window ).height();  //eslint-disable-line
                         var tooltipWidth = tbFlot.ctx.tooltip.width();
+                        var tooltipHeight = tbFlot.ctx.tooltip.height();
                         var left = pageX+5;
+                        var top = pageY+5;
                         if (windowWidth - pageX < tooltipWidth + 50) {
                             left = pageX - tooltipWidth - 10;
                         }
+                        if (windowHeight - pageY < tooltipHeight + 20) {
+                            top = pageY - tooltipHeight - 10;
+                        }
                         tbFlot.ctx.tooltip.css({
+                            top: top,
                             left: left
                         });
 
@@ -1128,6 +1270,9 @@ export default class TbFlot {
 
         if (!this.flotSelectHandler) {
             this.flotSelectHandler =  function (event, ranges) {
+                if (!tbFlot.ctx.plot) {
+                    return;
+                }
                 tbFlot.ctx.plot.clearSelection();
                 tbFlot.subscription.onUpdateTimewindow(ranges.xaxis.from, ranges.xaxis.to);
             };
@@ -1153,6 +1298,9 @@ export default class TbFlot {
         }
         if (!this.mouseleaveHandler) {
             this.mouseleaveHandler =  function () {
+                if (!tbFlot.ctx.plot) {
+                    return;
+                }
                 tbFlot.ctx.tooltip.stop(true);
                 tbFlot.ctx.tooltip.hide();
                 tbFlot.ctx.plot.unhighlight();
@@ -1160,6 +1308,17 @@ export default class TbFlot {
             };
             this.$element.bind('mouseleave', this.mouseleaveHandler);
         }
+
+        if (!this.flotClickHandler) {
+            this.flotClickHandler =  function (event, pos, item) {
+                if (!tbFlot.ctx.plot) {
+                    return;
+                }
+                tbFlot.onPieSliceClick(event, item);
+            };
+            this.$element.bind('plotclick', this.flotClickHandler);
+        }
+
     }
 
     disableMouseEvents() {
@@ -1191,6 +1350,10 @@ export default class TbFlot {
         if (this.mouseleaveHandler) {
             this.$element.unbind('mouseleave', this.mouseleaveHandler);
             this.mouseleaveHandler = null;
+        }
+        if (this.flotClickHandler) {
+            this.$element.unbind('plotclick', this.flotClickHandler);
+            this.flotClickHandler = null;
         }
     }
 
@@ -1341,6 +1504,17 @@ export default class TbFlot {
         this.pieDataRendered();
         this.ctx.plot.setData(this.pieData);
         this.ctx.plot.draw();
+    }
+
+    onPieSliceClick($event, item) {
+        var descriptors = this.ctx.actionsApi.getActionDescriptors('sliceClick');
+        if ($event && descriptors.length) {
+            $event.stopPropagation();
+            var entityInfo = this.ctx.actionsApi.getActiveEntityInfo();
+            var entityId = entityInfo ? entityInfo.entityId : null;
+            var entityName = entityInfo ? entityInfo.entityName : null;
+            this.ctx.actionsApi.handleWidgetAction($event, descriptors[0], entityId, entityName, item);
+        }
     }
 }
 

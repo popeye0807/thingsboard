@@ -1,5 +1,5 @@
 /*
- * Copyright © 2016-2017 The Thingsboard Authors
+ * Copyright © 2016-2019 The Thingsboard Authors
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 import './manage-dashboard-states.scss';
 
 /* eslint-disable import/no-unresolved, import/default */
@@ -112,7 +111,7 @@ export default function ManageDashboardStatesController($scope, $mdDialog, $filt
             templateUrl: dashboardStateDialogTemplate,
             parent: angular.element($document[0].body),
             locals: {isAdd: isAdd, allStates: vm.allStates, state: angular.copy(state)},
-            skipHide: true,
+            multiple: true,
             fullscreen: true,
             targetEvent: $event
         }).then(function (state) {
@@ -164,7 +163,7 @@ export default function ManageDashboardStatesController($scope, $mdDialog, $filt
                 .cancel($translate.instant('action.no'))
                 .ok($translate.instant('action.yes'));
 
-            confirm._options.skipHide = true;
+            confirm._options.multiple = true;
             confirm._options.fullscreen = true;
 
             $mdDialog.show(confirm).then(function () {
